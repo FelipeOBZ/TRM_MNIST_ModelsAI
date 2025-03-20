@@ -414,7 +414,7 @@ if opcion == "Entrenar Modelo":
 
         col1, col2 = st.columns(2)
         col1.subheader("Tabla de datos")
-        col1.data_editor(data, height=300)
+        col1.dataframe(data, height=300)
         
         col2.subheader("Gráfica XvY")
         fig, ax = plt.subplots()
