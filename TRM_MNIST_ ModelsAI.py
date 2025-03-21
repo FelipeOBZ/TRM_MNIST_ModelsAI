@@ -199,14 +199,23 @@ def predecir_rango(fecha_inicio, fecha_fin):
             modelo = st.session_state["modelo"]
             x_min, x_max = st.session_state["x_min"], st.session_state["x_max"]
             y_min, y_max = st.session_state["y_min"], st.session_state["y_max"]
-            
-            fechas = np.arange(fecha_inicio, fecha_fin + 1, 1)  # Generar rango de fechas
-            fechas_norm = (fechas - x_min) / (x_max - x_min)  # Normalizar
+
+            # Convertir a objetos datetime
+            fecha_inicio_dt = pd.to_datetime(fecha_inicio, format="%Y%m%d")
+            fecha_fin_dt = pd.to_datetime(fecha_fin, format="%Y%m%d")
+
+            # Generar rango de fechas correcto
+            fechas_dt = pd.date_range(start=fecha_inicio_dt, end=fecha_fin_dt, freq="D")
+            fechas = np.array([int(f.strftime("%Y%m%d")) for f in fechas_dt])  # Convertir a formato YYYYMMDD
+
+            # Normalizar fechas
+            fechas_norm = (fechas - x_min) / (x_max - x_min)
             fechas_tensor = tf.convert_to_tensor(fechas_norm.reshape(-1, 1), dtype=tf.float32)
-            
+
+            # Predecir valores
             predicciones_norm = modelo(fechas_tensor, training=False).numpy().flatten()
             predicciones = predicciones_norm * (y_max - y_min) + y_min  # Desnormalizar
-            
+
             return fechas, predicciones
         except Exception as e:
             st.error(f"Error en la predicción del rango: {str(e)}")
@@ -446,47 +455,69 @@ elif opcion == "Predecir Dólar":
         opcionPD = st.radio("Selecciona una opción", ["Fecha", "Rango de fechas"])
 
         if(opcionPD == "Fecha"):
-            fecha = st.number_input("Ingresa una fecha en formato numérico (YYYYMMDD)", min_value=0.0, step=1.0)
+
+            fecha = st.date_input("Ingresa una fecha")
             if st.button("Predecir"):
                 if verificar_entrenamiento():
-                    resultado = predecir(fecha)
+                    fecha_str = fecha.strftime("%Y%m%d")
+                    resultado = predecir(fecha_str)
                     st.write(f"Valor estimado del dólar: {float(resultado):.2f}")
                 else:
                     st.write("El modelo aún no está entrenado...")
         elif (opcionPD == "Rango de fechas"):
             # Predicción por rango de fechas
-            fecha_inicio = st.number_input("Fecha de inicio (YYYYMMDD):", min_value=0.0, step=1.0)
-            fecha_fin = st.number_input("Fecha de fin (YYYYMMDD):", min_value=0.0, step=1.0)
+            fecha_inicio = st.date_input("Fecha de inicio")
+            fecha_fin = st.date_input("Fecha de fin ")
 
             if fecha_inicio > fecha_fin:
                 st.error("La fecha de inicio no puede ser mayor que la fecha de fin.")
             else:
+                fecha_inicio_str = fecha_inicio.strftime("%Y%m%d")
+                fecha_fin_str = fecha_fin.strftime("%Y%m%d")
                 if st.button("Predecir Rango"):
                     if "entrenado" in st.session_state and st.session_state["entrenado"]:
+
                         fechas, valores = predecir_rango(fecha_inicio, fecha_fin)
+
                         if fechas is not None:
-                            # Convertir fechas numéricas a formato de fecha real
-                            fechas_formateadas = [datetime.datetime.strptime(str(int(f)), "%Y%m%d") for f in fechas]
-                            
-                            fig, ax = plt.subplots()
-                            ax.plot(fechas_formateadas, valores, marker='o', linestyle='-', color='b', label='Predicción')
-                            ax.set_xlabel("Fecha")
-                            ax.set_ylabel("Valor Dólar (COP)")
-                            ax.set_title("Predicción del Dólar en Rango de Fechas")
-                            ax.legend()
-                            
-                            # Formatear eje X para mostrar fechas de forma legible
-                            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-                            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-                            plt.xticks(rotation=45)
-                            
-                            # Añadir etiquetas de valores sobre cada punto
-                            for i, txt in enumerate(valores):
-                                ax.annotate(f"{txt:.2f}", (fechas_formateadas[i], valores[i]), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9, color='black')
-                            
-                            st.pyplot(fig)
-                    else:
-                        st.warning("El modelo aún no está entrenado.")
+                            fechas, valores = predecir_rango(fecha_inicio, fecha_fin)
+
+                            if fechas is not None:
+                                fechas_formateadas = [datetime.datetime.strptime(str(int(f)), "%Y%m%d") for f in fechas]
+
+                                fig, ax = plt.subplots(figsize=(12, 6))  # Aumentar el tamaño
+
+                                # Graficar
+                                ax.plot(fechas_formateadas, valores, marker='o', linestyle='-', color='b', label='Predicción')
+
+                                ax.set_xlabel("Fecha")
+                                ax.set_ylabel("Valor Dólar (COP)")
+                                ax.set_title("Predicción del Dólar en Rango de Fechas")
+                                ax.legend()
+
+                                # **Espaciado del eje X**
+                                intervalo_dias = max(1, len(fechas) // 8)
+                                ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+                                ax.xaxis.set_major_locator(mdates.DayLocator(interval=intervalo_dias))
+                                plt.xticks(rotation=45, ha="right")
+
+                                ax.grid(True, linestyle="--", alpha=0.6)
+
+                                # **Eliminar notación científica en el eje Y**
+                                ax.get_yaxis().get_offset_text().set_visible(False)
+
+                                # **Etiquetas mejor posicionadas**
+                                for i in range(len(fechas_formateadas)):
+                                    ax.annotate(f"${valores[i]:,.2f}",
+                                                (fechas_formateadas[i], valores[i]),
+                                                textcoords="offset points",
+                                                xytext=(-10, 10 if i % 2 == 0 else -15),  # Alternar posiciones para mejor visibilidad
+                                                ha='center', 
+                                                fontsize=9,
+                                                fontweight='bold',
+                                                color='black')
+
+                                st.pyplot(fig)
 
 # Entrenamiento MNIST
 elif opcion2 == "Entrenar Modelo MNIST":
